@@ -1,0 +1,119 @@
+# Base = despliegue CPU-only. La Tesla añade el override compose.gpu.yaml.
+# Postgres NO publica puertos: es de uso exclusivo entre api y worker.
+
+name: training-pipeline
+
+x-app-env: &app-env
+  DATABASE_URL: postgresql://${DBUSER}:${DBPASSWORD}@db:5432/${DBNAME}
+  DATA_ROOT: /data
+  RUNS_ROOT: /data/runs
+  DATASETS_ROOT: /data/datasets
+  MODELS_ROOT: /data/models
+  # El worker corre con el uid del host y no tiene HOME, asi que Matplotlib
+  # cae en /.config/matplotlib (no escribible) y crea un directorio temporal en
+  # cada import, que ademas ralentiza el arranque de cada dataloader.
+  MPLCONFIGDIR: /tmp/matplotlib
+  HOME: /tmp
+
+services:
+  db:
+    image: postgres:17.4
+    restart: always
+    environment:
+      POSTGRES_DB: ${DBNAME}
+      POSTGRES_USER: ${DBUSER}
+      POSTGRES_PASSWORD: ${DBPASSWORD}
+    volumes:
+      - ${DOCKER_PATH}/postgres/data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DBUSER} -d ${DBNAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [tp]
+
+  api:
+    build:
+      context: .
+      target: runtime-api
+    image: ${REGISTRY:-local}/tp-api:${TAG:-latest}
+    restart: always
+    # Corre con el uid del host para que los ficheros que crea en los volumenes
+    # (datasets, runs) sean escribibles desde el host sin `sudo`. Postgres NO
+    # se toca: necesita su propio usuario.
+    user: "${HOST_UID:-0}:${HOST_GID:-0}"
+    environment:
+      <<: *app-env
+    ports:
+      - "${API_PORT:-8000}:8000"
+    # La imagen no tiene curl (python:3.12-slim), asi que el healthcheck usa
+    # python. `start_period` cubre el tiempo que tardan las migraciones: sin el,
+    # el healthcheck falla mientras se migra y el worker nunca arrancaria.
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health',timeout=5).status==200 else 1)"
+      interval: 30s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    volumes:
+      - ${DOCKER_PATH}/datasets:/data/datasets
+      - ${DOCKER_PATH}/runs:/data/runs
+      - ${DOCKER_PATH}/models:/data/models
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [tp]
+
+  worker:
+    build:
+      context: .
+      target: runtime-worker
+    image: ${REGISTRY:-local}/tp-worker:${TAG:-latest}
+    restart: always
+    user: "${HOST_UID:-0}:${HOST_GID:-0}"
+    environment:
+      <<: *app-env
+      # INFO por defecto. Ponlo a DEBUG en el .env (o con
+      # `docker compose exec -e WORKER_LOG_LEVEL=DEBUG worker ...`) cuando algo
+      # falle: a INFO se descarta la salida del entrenamiento y solo llega el
+      # error secondary, que raramente dice la causa real.
+      WORKER_LOG_LEVEL: ${WORKER_LOG_LEVEL:-INFO}
+    volumes:
+      - ${DOCKER_PATH}/datasets:/data/datasets
+      - ${DOCKER_PATH}/runs:/data/runs
+      - ${DOCKER_PATH}/models:/data/models
+    # PyTorch pasa los tensores de los dataloaders al proceso principal por
+    # /dev/shm, que Docker deja en 64 MB por defecto. Con workers>0 eso no cabe
+    # (8 workers x 2 prefetch x 16 batch x 640^2 x 3 = 315 MB) y los procesos se
+    # quedan bloqueados sin consumir CPU ni GPU. No es un asunto de GPU: es
+    # multiproceso, y pasa igual en un despliegue CPU-only.
+    shm_size: ${SHM_SIZE:-2gb}
+    depends_on:
+      db:
+        condition: service_healthy
+      # El worker consulta training_jobs nada mas arrancar, asi que no puede
+      # levantarse hasta que la API haya aplicado las migraciones y este sana.
+      api:
+        condition: service_healthy
+    # El contenedor muere si el worker principal sale, asi que estar `running`
+    # ya significa que el bucle de entrenamiento vive. Este healthcheck anade
+    # la otra mitad: que el worker sigue pudiendo hablar con Postgres.
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import socket,sys; s=socket.create_connection(('db',5432),5); s.close()"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    networks: [tp]
+
+networks:
+  tp:
+    driver: bridge

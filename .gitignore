@@ -1,0 +1,28 @@
+# ── Datos y artefactos de entrenamiento: NUNCA en git ──
+# Postgres es la fuente de verdad; las imagenes y los pesos viven en volumenes.
+datasets/
+runs/
+*.pt
+*.onnx
+*.engine
+data/
+
+# Secretos
+.env
+
+# Entorno Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Herramientas
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+node_modules/
+# Editores
+*.swp
+*.swo
+resultados/

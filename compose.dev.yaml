@@ -1,0 +1,20 @@
+# Desarrollo: monta el codigo y recarga en caliente. Solo para iterar codigo;
+# para despliegue se usa la imagen construida y subida al registro.
+#
+#   docker compose -f compose.yaml -f compose.dev.yaml up --build
+
+services:
+  api:
+    build:
+      context: .
+      target: runtime-api
+    volumes:
+      - ./src:/app/src
+    command: uvicorn trainpipe.api:app --host 0.0.0.0 --port 8000 --reload
+
+  worker:
+    build:
+      context: .
+      target: runtime-worker
+    volumes:
+      - ./src:/app/src

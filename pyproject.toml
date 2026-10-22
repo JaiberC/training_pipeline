@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trainpipe"
+version = "0.1.0"
+description = "Servicio de entrenamiento YOLO26 / RT-DETR para deteccion y segmentacion"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "AGPL-3.0-only"
+
+# Sin dependencias por defecto: se instala por extra (api o worker) para que
+# la imagen de la API no arrastre PyTorch.
+dependencies = []
+
+[project.optional-dependencies]
+# Imagen runtime-api: SIN torch. Ver la restriccion de imports en AGENTS.md.
+api = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.2",
+    "alembic>=1.14",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "pyyaml>=6.0",
+    "python-multipart>=0.0.12",
+]
+
+# Imagen runtime-worker: CON torch (lo necesita train_cli, que corre como subproceso).
+worker = [
+    "ultralytics==8.4.174",
+    "opencv-python>=4.10",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.2",
+    "alembic>=1.14",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "pyyaml>=6.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

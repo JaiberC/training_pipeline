@@ -1,0 +1,16 @@
+# Override para el servidor Tesla. Sin este archivo el worker arranca en CPU
+# creyendo que entrena con GPU: no da error, solo tarda ~20x mas.
+#
+#   docker compose -f compose.yaml -f compose.gpu.yaml up -d
+#
+# Requisito del host: NVIDIA Container Toolkit instalado.
+
+services:
+  worker:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

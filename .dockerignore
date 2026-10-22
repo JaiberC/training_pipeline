@@ -1,0 +1,22 @@
+# El contexto de build se envía al daemon ANTES de construir. Sin esto, los
+# volúmenes montados desde ${DOCKER_PATH} (datasets, runs, venv) se transmiten
+# completos y el primer build falla o tarda horas.
+*
+!src/
+!pyproject.toml
+!alembic.ini
+!README.md
+!migrations/
+!docker/
+!VERSION
+
+src/**/__pycache__/
+src/**/*.pyc
+*.egg-info/
+.venv/
+venv/
+.git/
+.gitignore
+.env
+compose*.yaml
+.agents/
